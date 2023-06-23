@@ -1,0 +1,3 @@
+[submodule "project/sources/flytekit-python-template"]
+	path = project/sources/flytekit-python-template
+	url = https://github.com/flyteorg/flytekit-python-template

@@ -1,0 +1,5 @@
+endpoint: demo.hosted.unionai.cloud
+client_id: "union-smoketest-operator"
+client_credentials_secret: "t4qVv-1BdbIqP1WU6DPBO2BYF2T2pCQcW0S6EwCd"
+docker_registry:
+docker_password:

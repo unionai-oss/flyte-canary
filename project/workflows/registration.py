@@ -115,7 +115,7 @@ def prepare_and_register(workflows_to_register: typing.List[dict]) -> typing.Lis
 
 
 if __name__ == '__main__':
-    # Build the image for the workflow by running pyflyte register project/workflows/registration.py
+    # Build the image for the workflow by running python project/workflows/registration.py
     # Note: The flytekit version should be the same as the version in the imageSpec
     workflows_to_register = [
         {"directory": "bayesian-optimization", "workflow_name": "wf", "workflow_file": "bayesian_optimization_example"}]

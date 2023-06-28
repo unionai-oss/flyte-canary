@@ -1,11 +1,14 @@
 """A simple Flyte example."""
-
 import typing
-from flytekit.configuration import SerializationSettings, Config, PlatformConfig, AuthType, ImageConfig
+from pathlib import Path
+
+from flytekit.configuration import SerializationSettings, Config, PlatformConfig, ImageConfig, \
+    FastSerializationSettings
 from flytekit.core.base_task import PythonTask
 from flytekit.core.workflow import WorkflowBase
-from flytekit import task, workflow, dynamic, ImageSpec
-from flytekit.remote import FlyteRemote, FlyteTask, FlyteWorkflow
+from flytekit import task, dynamic
+from flytekit.image_spec.image_spec import ImageBuildEngine
+from flytekit.remote import FlyteRemote
 from contextlib import contextmanager
 import yaml
 import importlib
@@ -48,31 +51,40 @@ def register_workflow(workflow_content: dict, platform_args: dict) -> str:
     workflow_name = workflow_content["workflow_name"]
     workflow_file_name = workflow_content["workflow_file"]
     print("workflow registration started")
-    context = FlyteRemote(config=Config(platform=PlatformConfig(**platform_args)))
+    remote = FlyteRemote(config=Config(platform=PlatformConfig(**platform_args)), default_project="flytetester", default_domain="development")
     with module_management(directory_name, file_name=workflow_file_name, secondary=True) as project_mod:
         print("registering workflow")
         workflow = getattr(project_mod, workflow_name)
+        source_root = os.path.join("/root", "project", "sources", "flytekit-python-template", directory_name)
+        md5_bytes, native_url = remote.fast_package(Path(source_root), False)
+        fast_serialization_settings = FastSerializationSettings(
+            enabled=True,
+            destination_dir="root",
+            distribution_location=native_url,
+        )
+        serialization_settings = SerializationSettings(
+            image_config=ImageConfig(),
+            project="flytetester",
+            domain="development",
+            fast_serialization_settings=fast_serialization_settings,
+        )
+
+        version = remote._version_from_hash(md5_bytes, serialization_settings)
+
         if isinstance(workflow, WorkflowBase):
-            wf = context.register_workflow(entity=workflow,
-                                           serialization_settings=SerializationSettings(
-                                               image_config=ImageConfig(),
-                                               project="flytetester",
-                                               domain="development"
-                                           ),
-                                           version=f"{directory_name} - {workflow_name} - 1"
-                                           )
+            wf = remote.register_workflow(entity=workflow,
+                                          serialization_settings=serialization_settings,
+                                          version=version
+                                          )
         elif isinstance(workflow, PythonTask):
-            wf = context.register_task(entity=workflow,
-                                       serialization_settings=SerializationSettings(
-                                           image_config=ImageConfig(),
-                                           project="flytetester",
-                                           domain="development"
-                                       ),
-                                       version=f"{directory_name} - {workflow_name} - 1"
-                                       )
+            wf = remote.register_task(entity=workflow,
+                                      serialization_settings=serialization_settings,
+                                      version=version
+                                      )
         else:
             raise Exception("unknown workflow type")
-        return context.generate_console_url(wf)
+        return remote.generate_console_url(wf)
+
 
 @dynamic
 def prepare_and_register(workflows_to_register: typing.List[dict]) -> typing.List[str]:
@@ -96,6 +108,19 @@ def prepare_and_register(workflows_to_register: typing.List[dict]) -> typing.Lis
         with module_management(workflow["directory"], module="workflows", file_name="images") as image_module:
             image = getattr(image_module, "default")
             print(f"image: {image}")
-            registered_wf = register_workflow(workflow_content=workflow, platform_args=platform_args).with_overrides(container_image=image)
+            registered_wf = register_workflow(workflow_content=workflow, platform_args=platform_args).with_overrides(
+                container_image=image)
         workflows.append(registered_wf)
     return workflows
+
+
+if __name__ == '__main__':
+    # Build the image for the workflow by running python project/workflows/registration.py
+    # Note: The flytekit version should be the same as the version in the imageSpec
+    workflows_to_register = [
+        {"directory": "bayesian-optimization", "workflow_name": "wf", "workflow_file": "bayesian_optimization_example"}]
+    for workflow in workflows_to_register:
+        with module_management(workflow["directory"], module="workflows", file_name="images") as image_module:
+            image = getattr(image_module, "default")
+            print(f"image: {image}")
+            ImageBuildEngine.build(image)

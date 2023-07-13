@@ -1,101 +1,77 @@
 """A simple Flyte example."""
 
 import typing
-from flytekit.configuration import SerializationSettings, Config, PlatformConfig, AuthType, ImageConfig
-from flytekit.core.base_task import PythonTask
-from flytekit.core.workflow import WorkflowBase
-from flytekit import task, workflow, dynamic, ImageSpec
-from flytekit.remote import FlyteRemote, FlyteTask, FlyteWorkflow
-from contextlib import contextmanager
-import yaml
-import importlib
-import os, sys
+from flytekit import ContainerTask, workflow, kwtypes, task, Secret, current_context, PodTemplate
+import json
+from typing import Tuple
+from flytekit.types.file import FlyteFile
+from kubernetes.client import V1PodSpec, V1Container
 
-@contextmanager
-def module_management(workflow_name: str, file_name: str = "", module: str = "workflows", secondary: bool = False):
-    """
-    allows for the import of a workflow module from a path,
-    but imports from the templates root directory; preserving the correct path for imports
-    """
-    path = os.path.join("project", "sources", "flytekit-python-template", workflow_name)
-    if secondary:
-        path = os.path.join("root", path)
-        directory_contents = os.listdir(path)
+SECRET_GROUP = "arn:aws:secretsmanager:us-east-2:356633062068:secret:"
+SECRET_FLYE_CONFIG = "flyte/secret/config-v0djCs"
+SECRET_FLYTE_APP_SECRET = "flyte/secret/data-RbucyV"
+SECRET_IM = "img/registry/data-ihWOo0"
 
-        # Print the results
-        for item in directory_contents:
-            print(item)
-    sys.path.insert(0, path)
-    imported_module = None
 
-    try:
-        if file_name == "":
-            import_path = ".".join([module])
-            imported_module = importlib.import_module(import_path, package=module)
-        else:
-            import_path = ".".join([module, file_name])
-            if import_path in sys.modules:
-                del sys.modules[import_path]
-            imported_module = importlib.import_module(import_path, package=file_name)
-        yield imported_module
-    finally:
-        sys.path.remove(path)
-        if imported_module in sys.modules:
-            del sys.modules[imported_module.__name__]
-@task
-def register_workflow(workflow_content: dict, platform_args: dict) -> str:
-    directory_name = workflow_content["directory"]
-    workflow_name = workflow_content["workflow_name"]
-    workflow_file_name = workflow_content["workflow_file"]
-    print("workflow registration started")
-    context = FlyteRemote(config=Config(platform=PlatformConfig(**platform_args)))
-    with module_management(directory_name, file_name=workflow_file_name, secondary=True) as project_mod:
-        print("registering workflow")
-        workflow = getattr(project_mod, workflow_name)
-        if isinstance(workflow, WorkflowBase):
-            wf = context.register_workflow(entity=workflow,
-                                           serialization_settings=SerializationSettings(
-                                               image_config=ImageConfig(),
-                                               project="flytetester",
-                                               domain="development"
-                                           ),
-                                           version=f"{directory_name} - {workflow_name} - 1"
-                                           )
-        elif isinstance(workflow, PythonTask):
-            wf = context.register_task(entity=workflow,
-                                       serialization_settings=SerializationSettings(
-                                           image_config=ImageConfig(),
-                                           project="flytetester",
-                                           domain="development"
-                                       ),
-                                       version=f"{directory_name} - {workflow_name} - 1"
-                                       )
-        else:
-            raise Exception("unknown workflow type")
-        return context.generate_console_url(wf)
+register = ContainerTask(
+    name="register",
+    input_data_dir="/var/inputs",
+    output_data_dir="/var/outputs",
+    inputs=kwtypes(git_url=str, git_commit_target=str, project_dir=str, flyte_secret=str,  im_registry=str, im_user=str, im_pass=str),
+    outputs=kwtypes(output=str),
+    image="ghcr.io/zeryx/canary:register",
+    command=[
+        "./execute.sh",
+        "{{.inputs.git_url}}",
+        "{{.inputs.git_commit_target}}",
+        "{{.inputs.project_dir}}",
+        "{{.inputs.flyte_secret}}",
+        "{{.inputs.im_registry}}",
+        "{{.inputs.im_user}}",
+        "{{.inputs.im_pass}}",
+        "/var/outputs"
+    ],
+    pod_template=PodTemplate(
+        primary_container_name="register",
+        pod_spec=V1PodSpec(
+            containers=[
+                V1Container(
+                    name="register",
+                    image_pull_policy="Always",
+            )]
+        )
+    )
+)
 
-@dynamic
-def prepare_and_register(workflows_to_register: typing.List[dict]) -> typing.List[str]:
-    workflows_to_register = [{"directory": "bayesian-optimization", "workflow_name": "wf", "workflow_file": "bayesian_optimization_example"}]
-    config_path = os.path.join("project", "config", "config.yaml")
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
-    platform_args = {
-        "endpoint": config["endpoint"],
-        "insecure": False,
-        "auth_mode": "CLIENT_CREDENTIALS",
-        "client_id": config["client_id"],
-        "client_credentials_secret": config["client_credentials_secret"]
-    }
-    if platform_args["client_id"] == "":
-        platform_args["client_id"] = os.getenv("FLYTE_CLIENT_ID")
-    if platform_args["client_credentials_secret"] == "":
-        platform_args["client_credentials_secret"] = os.getenv("FLYTE_CLIENT_SECRET")
-    workflows = []
-    for workflow in workflows_to_register:
-        with module_management(workflow["directory"], module="workflows", file_name="images") as image_module:
-            image = getattr(image_module, "default")
-            print(f"image: {image}")
-            registered_wf = register_workflow(workflow_content=workflow, platform_args=platform_args).with_overrides(container_image=image)
-        workflows.append(registered_wf)
-    return workflows
+@task(secret_requests=[
+        Secret(
+            group=SECRET_GROUP,
+            key=SECRET_FLYTE_APP_SECRET,
+            mount_requirement=Secret.MountType.FILE),
+    Secret(
+        group=SECRET_GROUP,
+        key=SECRET_IM,
+        mount_requirement=Secret.MountType.FILE)
+    ])
+def get_credentials() -> Tuple[str, str, str, str]:
+    flyte_secret = current_context().secrets.get(SECRET_GROUP, SECRET_FLYTE_APP_SECRET)
+    im_data_content = current_context().secrets.get(SECRET_GROUP, SECRET_IM)
+    im_data = json.loads(im_data_content)
+    return  flyte_secret, im_data["registry"], im_data["user"], im_data["pass"]
+    
+
+@workflow
+def proxy_registration_wf(git_url: str, git_commit_target: str = "master", project_dir: str =".") -> str:
+    """This is a dynamic task that will be executed at runtime."""
+
+    flyte_secret, im_registry, im_user, im_pass = get_credentials()
+
+    return register(
+        git_url=git_url,
+        git_commit_target=git_commit_target,
+        project_dir=project_dir,
+        flyte_secret=flyte_secret,
+        im_registry=im_registry,
+        im_user=im_user,
+        im_pass=im_pass
+    )

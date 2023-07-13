@@ -1,0 +1,18 @@
+admin:
+  # For GRPC endpoints you might want to use dns:///flyte.myexample.com
+  endpoint: dns:///demo.hosted.unionai.cloud
+  clientId: zeryx-ci-operator
+  clientSecretLocation: /tmp/secret
+  insecure: false
+  authType: ClientSecret
+logger:
+  show-source: true
+  level: 0
+union:
+  connection:
+    host: dns:///demo.hosted.unionai.cloud
+    insecure: false
+  auth:
+    clientId: zeryx-ci-operator
+    clientSecretLocation: /tmp/secret
+    type: ClientSecret

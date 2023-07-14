@@ -10,6 +10,6 @@ RUN apt-get update
 RUN apt install -y docker.io
 
 COPY execute.sh /root/execute.sh
-COPY config.yaml /root/config.yaml
+COPY config.yaml /root/.uctl/config.yaml
 
 WORKDIR /root

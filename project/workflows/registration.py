@@ -4,7 +4,6 @@ import typing
 from flytekit import ContainerTask, workflow, kwtypes, task, Secret, current_context, PodTemplate
 import json
 from typing import Tuple
-from flytekit.types.file import FlyteFile
 from kubernetes.client import V1PodSpec, V1Container
 
 SECRET_GROUP = "arn:aws:secretsmanager:us-east-2:356633062068:secret:"

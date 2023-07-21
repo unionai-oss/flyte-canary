@@ -1,10 +1,10 @@
 """A simple Flyte example."""
 
 import typing
-from flytekit import ContainerTask, workflow, kwtypes, task, Secret, current_context, PodTemplate
+from flytekit import ContainerTask, workflow, kwtypes, task, Secret, current_context, PodTemplate, Resources
 import json
 from typing import Tuple
-from kubernetes.client import V1PodSpec, V1Container
+from kubernetes.client import V1PodSpec, V1Container, V1SecurityContext
 
 SECRET_GROUP = "arn:aws:secretsmanager:us-east-2:356633062068:secret:"
 SECRET_FLYE_CONFIG = "flyte/secret/config-v0djCs"
@@ -19,6 +19,7 @@ register = ContainerTask(
     inputs=kwtypes(git_url=str, git_commit_target=str, project_dir=str, flyte_secret=str,  im_registry=str, im_user=str, im_pass=str),
     outputs=kwtypes(output=str),
     image="ghcr.io/zeryx/canary:register",
+    requests=Resources(cpu="1", mem="10Gi", ephemeral_storage="10Gi"),
     command=[
         "./execute.sh",
         "{{.inputs.git_url}}",
@@ -37,6 +38,9 @@ register = ContainerTask(
                 V1Container(
                     name="register",
                     image_pull_policy="Always",
+                    security_context=V1SecurityContext(
+                        privileged=True,
+                    )
             )]
         )
     )

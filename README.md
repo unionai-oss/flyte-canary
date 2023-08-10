@@ -1,25 +1,35 @@
-# dist
+# Flyte Remote Build and Registration Workflow
 
-A template for the recommended layout of a Flyte enabled repository for code written in python using [flytekit](https://docs.flyte.org/projects/flytekit/en/latest/).
+This is a Flyte workflow that enables the use of a Flyte task and Kubernetes cluster as a remote build server and registration device for Flyte constructs. With this workflow, you can remotely register your Flyte workflows without needing to have the local dependencies installed. Simply configure, fire, and forget.
 
-## Usage
+## How to Run
 
-To get up and running with your Flyte project, we recommend following the
-[Flyte getting started guide](https://docs.flyte.org/en/latest/getting_started.html).
+### 1. Prepare Your Config File
+First, prepare your `config.yaml` file. Check the template provided in the repository to understand what you need to modify.
 
-This project includes a script `docker_build.sh` that you can use to build a
-Docker image for your Flyte project.
+### 2. Create Secrets in AWS Secrets Manager
+You'll need to create two secrets in AWS Secrets Manager:
 
-```
-# help
-./docker_build.sh -h
+#### Flyte App Secret
+- Create an App with Kubernetes and record the app name (put it in the `config.yaml` file).
+- Separately, record the secret and store that in the AWS Secrets Manager as raw text.
 
-# build an image with defaults
-./docker_build.sh
+#### Second Secret
+This secret is a JSON object containing an imageRegistry path, username, and password. For example:
+```json
+{
+  "registry": "ghcr.io/zeryx/flytekit",
+  "username": "zeryx",
+  "password": "..."
+} ```
 
-# build an image with custom values
-./docker_build.sh -p dist -r <REGISTRY> -v <VERSION>
-```
+Store this also in the AWS Secrets Manager.
 
-We recommend using a git repository to version this project, so that you can
-use the git sha to version your Flyte workflows.
+Follow this guide to connect your AWS Secrets Manager with your Flyte cluster.
+
+Inputs
+Pass in a Git URL pointing to the workflows you want to register, along with the branch or commit hash.
+Outputs
+The full URL of your now registered workflow(s) that you can interact with will be provided as the output.
+Support and Contributions
+If you encounter any issues or have any questions, please open an issue in this repository. Contributions to enhance this workflow are also welcome!

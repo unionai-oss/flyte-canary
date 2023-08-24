@@ -21,7 +21,8 @@ This secret is a JSON object containing an imageRegistry path, username, and pas
   "registry": "ghcr.io/zeryx/flytekit",
   "username": "zeryx",
   "password": "..."
-} ```
+} 
+```
 
 Store this also in the AWS Secrets Manager.
 
